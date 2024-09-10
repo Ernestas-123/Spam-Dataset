@@ -1,0 +1,292 @@
+---
+title: ""
+output: pdf_document
+---
+
+The dataset spam available in package kernlab contains 57 features extracted from the content of emails which were classified as spam or nonspam. The first 48 variables contain the frequency of the variable name (e.g., business) in the email. If the variable name starts with num (e.g., num650) it indicates the frequency of the corresponding number (e.g., 650). The variables 49-54 indicate the frequency of the special characters ;, (, [, !, \$, and \#. The variables 55-57 contain the average, longest and total run-length of capital letters. The last variable, type indicates if an email is spam or nonspam.
+
+The task is to predict if an email is spam or not, using columns 49-57.
+
+#   Prepare data
+```{r}
+# Load the data
+data("spam", package = "kernlab")
+
+# Select relevant columns
+data_spam = spam[, 49:58]
+
+# check if all variables are coded correctly (variable type)
+str(data_spam)
+```
+
+#   Logistic Regression
+```{r}
+spam_model = glm(type ~ ., data = data_spam, family = binomial)
+summary(spam_model)
+```
+
+#   Predictive performance - Accuracy and ROC
+```{r}
+# Set tau
+tau = 0.5
+predicted_p = fitted(spam_model)
+y_hat = ifelse(predicted_p > tau, 1, 0)
+
+# Cross tabulation between observed and predicted
+table(data_spam$type, y_hat)
+
+# Compute accuracy for given tau
+tab = table(data_spam$type, y_hat)
+sum(diag(tab)) / sum(tab)
+```
+The larger the area under the ROC curve the better.
+The advantage of using the ROC and AU-ROC is that the predictive performance is evaluated regardless of a specific choice of τ.
+```{r}
+# Package ROCR can be used to calculate many performance measures
+# Varying Tau will give different values of various performance measures
+
+library(ROCR)
+
+# Create a prediction object, stores predicted probabilities and true class labels
+pred_object = prediction(predicted_p, data_spam$type)
+
+# Plot ROC Curve
+# Function performance then can be applied to calculate different performance measure
+# ?performance to see all metrics available
+roc = performance(pred_object, "tpr", "fpr")
+plot(roc)
+abline(0, 1, col = "darkorange2", lty = 2) # add bisect line
+```
+
+```{r}
+# compute the area under the ROC curve
+auc = performance(pred_object, "auc")
+auc@y.values
+```
+#   Predictive performance - Sensitivity(TPR) and Specificity(TNR)
+```{r}
+# Sensitivity TPR
+tpr = performance(pred_object, "tpr")
+
+# Specificity TNR
+tnr = performance(pred_object, "tnr")
+```
+
+The optimal threshold𝜏can be found maximizing the sum of TPR and TNR
+```{r}
+# values of tau from 0 to 1
+tau = tpr@x.values[[1]]
+# x.values are the same for all metrics 0 - 1
+
+
+tpr_tnr = tpr@y.values[[1]] + tnr@y.values[[1]]
+best_roc = which.max(tpr_tnr)
+
+plot(tau, tpr_tnr, type = "l", ylab = "tpr + tnr")
+points(tau[best_roc], tpr_tnr[best_roc], pch = 19, col = adjustcolor("darkorange2", 0.5))
+```
+```{r}
+tau[best_roc] # optimal tau
+```
+```{r}
+# Classification using optimal tau
+pred_y = ifelse(fitted(spam_model) > tau[best_roc], 1, 0)
+table(data_spam$type, pred_y)
+```
+```{r}
+# accuracy for optimal tau
+acc = performance(pred_object, "acc")
+acc@y.values[[1]][best_roc]
+```
+```{r}
+# sensitivity and specificity for optimal tau
+tpr@y.values[[1]][best_roc]
+tnr@y.values[[1]][best_roc]
+```
+
+#   Predictive performance - Precision/Recall/F1 score
+```{r}
+# produce precision/recall curve
+pr = performance(pred_object, "prec", "rec")
+plot(pr)
+```
+```{r}
+# compute area under the PR curve
+aucpr = performance(pred_object, "aucpr")
+aucpr@y.values # add this to graph
+# the higher the better AUC-PR
+```
+f1 score: The score can be interpreted as a model’s balanced ability to both detect positive cases (recall) and be accurate with the cases it detects (precision). The F1 score is the harmonic mean of precision and recall:
+Pick the threshold with the highest f1 score if focus is predicting the positive cases
+
+```{r}
+f1 = performance(pred_object, "f")
+f1_scores = f1@y.values[[1]]
+best_f1 = which.max(f1_scores)
+```
+
+```{r}
+plot(tau, f1_scores, type = "l")
+points(tau[best_f1], f1_scores[best_f1], pch = 19, col = adjustcolor("darkorange2", 0.5))
+
+tau[best_f1] # optimal tau
+f1_scores[best_f1] # best f1
+acc@y.values[[1]][best_f1] # accuracy using optimal tau as threshold
+```
+If the classes are significantly imbalanced F1 and Sens+Spec will result in different optimal tau
+
+
+
+#   Multinomial logistic regression: framework for multi-class classification problems
+
+```{r}
+library(nnet)
+data("Vehicle", package = "mlbench")
+vehicle_data = Vehicle
+```
+
+```{r}
+vehicle_model = multinom(Class ~ ., data = vehicle_data, maxit = 300)
+table(vehicle_data$Class)
+summary(vehicle_model)
+```
+
+
+```{r}
+table(predict(vehicle_model)) # by default gives predicted classes instead of probability
+```
+
+
+```{r}
+tab = table(true = vehicle_data$Class, pred = predict(vehicle_model))
+tab
+```
+
+
+```{r}
+# Accuracy
+sum(diag(tab)) / sum(tab)
+```
+
+
+```{r}
+# Sensitivity TPR
+cbind(tab, sens = diag(tab) / rowSums(tab))
+```
+
+
+```{r}
+# 2.1 TASK
+data("Vowel", package = "mlbench")
+vowel_data = Vowel
+
+vowel_model = multinom(Class ~ ., data = vowel_data, maxit = 500)
+
+# true classes
+table(vowel_data$Class)
+
+# predicted classes
+table(predict(vowel_model))
+
+tab = table(true = vowel_data$Class, pred = predict(vowel_model))
+tab
+
+acc = sum(diag(tab)) / sum(tab)
+acc
+
+# tpr
+diag(tab) / rowSums(tab)
+```
+
+
+
+```{r}
+
+heart_data = read.csv("data_heart_disease_BRFSS2015.csv")
+
+#factor binary/categorical variables
+heart_data[, c(1:4, 6:22)] = lapply(heart_data[, c(1:4, 6:22)], factor)
+str(heart_data)
+
+# Classes highly imbalanced
+y = table(heart_data$HeartDiseaseorAttack)
+table(heart_data$HeartDiseaseorAttack) / nrow(heart_data)
+
+tau = 0.5
+
+heart_model = glm(HeartDiseaseorAttack ~ ., data = heart_data, family = binomial, maxit = 1000) 
+heart_model
+
+# Predicted
+predicted_p = fitted(heart_model)
+y_hat = ifelse(predicted_p > tau, 1, 0)
+
+table(y_hat)
+
+
+
+
+
+data <- read.csv("data_heart_disease_BRFSS2015.csv")
+# make sure that binary/categorical variables are correctly encoded as factor
+data[,c(1:4,6:14,18:19)] <- lapply( data[,c(1:4,6:14,18:19)], factor )
+str(data)
+# classes are highly imbalanced
+table(data$HeartDiseaseorAttack)
+table(data$HeartDiseaseorAttack)/nrow(data)
+
+
+y = data$HeartDiseaseorAttack
+table(data$HeartDiseaseorAttack) / nrow(data)
+
+heart_model = glm(HeartDiseaseorAttack ~ ., data = data, family = binomial, maxit = 1000) 
+heart_model
+
+predicted_p = fitted(heart_model)
+y_hat = ifelse(predicted_p > tau, 1, 0)
+table(y_hat)
+
+tab = table(true = y, pred = y_hat)
+tab
+
+# accuracy
+sum(diag(tab)) / sum(tab)
+
+pred_object = prediction(predicted_p, data$HeartDiseaseorAttack)
+
+
+# Sensitivity TPR
+tpr = performance(pred_object, "tpr")
+
+# Specificity TNR
+tnr = performance(pred_object, "tnr")
+
+# the optimal threshold𝜏can be found maximizing the sum of TPR and TNR
+
+# values of tau from 0 to 1
+tau = tpr@x.values[[1]]
+# x.values are the same for all metrics 0 - 1
+
+tpr_tnr = tpr@y.values[[1]] + tnr@y.values[[1]]
+best_tau = which.max(tpr_tnr)
+tau[best_tau]
+
+plot(tau, tpr_tnr, type = "l", ylab = "tpr + tnr")
+points(tau[best_tau], tpr_tnr[best_tau], color = "red")
+
+# produce precision/recall curve
+pr = performance(pred_object, "prec", "rec")
+plot(pr)
+
+
+f1 = performance(pred_object, "f")
+f1_values = f1@y.values[[1]]
+best_f1 = which.max(f1_values)
+best_f1
+tau = f1@x.values
+tau[best_f1]
+plot(tau, f1_values)
+```
+
+
+
